@@ -1,0 +1,1035 @@
+-- Answer of objective question No.2
+WITH Season1_Matches AS (
+    SELECT Match_Id
+    FROM matches
+    WHERE Season_Id = 6
+),
+
+RCB_Batting AS (
+    SELECT 
+        b.Match_Id,
+        b.Innings_No,
+        SUM(b.Runs_Scored) AS Total_Normal_Runs
+    FROM 
+        ball_by_ball b
+    JOIN 
+        Season1_Matches sm ON b.Match_Id = sm.Match_Id
+    WHERE 
+        b.Team_Batting = 2  -- RCB's Team_Id
+    GROUP BY 
+        b.Match_Id, b.Innings_No
+),
+RCB_Extras AS (
+    SELECT 
+        e.Match_Id,
+        e.Innings_No,
+        SUM(distinct e.Extra_Runs) AS Total_Extra_Runs
+    FROM 
+        extra_runs e
+    JOIN 
+        ball_by_ball b ON b.Match_Id = e.Match_Id AND b.Innings_No = e.Innings_No
+    WHERE 
+        b.Team_Batting = 2  -- RCB's Team_Id
+    GROUP BY 
+        e.Match_Id, e.Innings_No
+)
+
+SELECT 
+    SUM(COALESCE(rb.Total_Normal_Runs, 0)) AS Total_Normal_Runs,
+    SUM(COALESCE(re.Total_Extra_Runs, 0)) AS Total_Extra_Runs,
+    SUM(COALESCE(rb.Total_Normal_Runs, 0) + COALESCE(re.Total_Extra_Runs, 0)) AS Total_Runs_Scored
+FROM 
+    RCB_Batting rb
+LEFT JOIN 
+    RCB_Extras re ON rb.Match_Id = re.Match_Id AND rb.Innings_No = re.Innings_No;
+    
+    -- Answer of objective question No.3
+SELECT COUNT(*)
+from player
+where timestampdiff(year,DOB,'2014-06-01')>25;
+
+-- Answer of objective question No.4
+select count(*) as No_of_match_won from matches m join season s
+on m.Season_Id=s.Season_Id
+join team t 
+on t.Team_Id=m.Match_Winner
+where s.Season_Year=2013 and t.Team_Name='Royal Challengers Bangalore'
+
+-- Answer of objective question No.5
+
+with nos_balls as (SELECT Striker as player_id,row_number() over() as No_of_balls FROM ball_by_ball),
+player_score as (
+SELECT 
+    striker as player_id, SUM(Runs_Scored) AS player_run
+FROM
+    ball_by_ball
+GROUP BY striker
+), strike_rate as
+(
+select distinct p.player_id,round((p.player_run/count(n.No_of_balls))*100,2) as strike_rate from nos_balls n 
+join player_score p
+on n.player_id=p.player_id
+group by n.player_id
+order by strike_rate desc
+)
+SELECT distinct pm.Player_Id,sr.strike_rate FROM player_match pm
+join matches m 
+on pm.Match_Id=m.Match_Id
+join strike_rate sr 
+on pm.Player_Id= sr.player_id
+order by sr.strike_rate desc limit 10;
+
+-- Answer of objective question No.6
+SELECT 
+    striker as player_id, ROUND(SUM(Runs_Scored)/9,2) AS Average
+FROM
+    ball_by_ball
+GROUP BY striker
+ORDER BY Average DESC;
+
+-- Answer of objective question No.7
+with bowler_wicket as (
+SELECT row_number() over() as s_no, b.Bowler FROM wicket_taken w 
+inner join ball_by_ball b 
+on b.Match_Id=w.Match_Id and b.Over_Id=w.Over_Id and b.Ball_Id=w.Ball_Id and b.Innings_No=w.Innings_No
+)
+select bowler as player_id,round(count(s_no)/9,1) as average from bowler_wicket
+group by bowler
+order by average desc;
+
+-- Answer of objective question No.8
+-- batsmen_average
+
+with total_match as (
+SELECT Player_Id,count(Match_Id) as total_match FROM player_match
+group by Player_Id
+),
+player_score as (
+SELECT 
+    striker as player_id, SUM(Runs_Scored) AS total_run
+FROM
+    ball_by_ball
+GROUP BY striker
+),players_avg as (
+select t.player_id, round(p.total_run/t.total_match,2) as player_average from total_match t 
+join player_score p
+on t.player_id=p.player_id
+),
+
+
+-- bowlers_average
+
+wicket_taker_bowler as (SELECT row_number() over() as s_no, b.Bowler FROM wicket_taken w 
+inner join ball_by_ball b 
+on b.Match_Id=w.Match_Id and b.Over_Id=w.Over_Id and b.Ball_Id=w.Ball_Id and b.Innings_No=w.Innings_No),
+players_total_wicket as (select bowler as player_id,count(s_no) as players_wicket from wicket_taker_bowler
+group by bowler),
+bowlers_avg as (
+select pw.player_id, round(pw.players_wicket/tm.total_match,1) as avg from players_total_wicket pw 
+join total_match tm 
+on tm.player_id=pw.player_id)
+-- bowler average
+select player_id as bowler_player_id from bowlers_avg
+where avg > (select avg(avg) from bowlers_avg);
+-- batsmen average
+select player_id as batsmen_player_id from players_avg
+where player_average > (select avg(player_average) from players_avg);
+
+-- Answer of objective question No.9
+with rcb_match_result as (
+SELECT v.Venue_Name,
+case
+when Match_Winner = 2 then 'Win'
+end as win,
+case
+when Match_Winner != 2 then 'Lose'
+end as lose
+FROM matches m 
+join venue v 
+on m.Venue_Id=v.Venue_Id
+WHERE Team_1=2 OR Team_2=2
+)
+select Venue_Name, count(win) as Won, count(lose) as Lost from rcb_match_result
+group by Venue_Name;
+
+-- Answer of objective question No.10
+
+with bowler_with_wicket as (SELECT b.Bowler FROM ball_by_ball b
+right join wicket_taken w 
+on b.Match_Id=w.Match_Id and b.Over_Id=w.Over_Id and b.Ball_Id=w.Ball_Id)
+SELECT count(p.Player_Id) as No_of_player,b.Bowling_skill FROM player p
+join bowling_style b
+on p.Bowling_skill=b.Bowling_Id
+right join bowler_with_wicket bw 
+on bw.Bowler= p.Player_Id
+group by b.Bowling_skill;
+
+-- Answer of objective question No.11
+WITH runs_by_team AS (
+    SELECT 
+        m.Season_Id,
+        b.Team_Batting AS Team_Id,
+        SUM(b.Runs_Scored) AS Total_Runs
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        m.Season_Id, b.Team_Batting
+),
+wickets_by_team AS (
+    SELECT 
+        m.Season_Id,
+        b.Team_Bowling AS Team_Id,
+        COUNT(*) AS Total_Wickets
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball b 
+        ON w.Match_Id = b.Match_Id 
+           AND w.Over_Id = b.Over_Id 
+           AND w.Ball_Id = b.Ball_Id 
+           AND w.Innings_No = b.Innings_No
+    JOIN 
+        matches m ON w.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        m.Season_Id, b.Team_Bowling
+),
+team_season_stats AS (
+    SELECT 
+        r.Season_Id,
+        r.Team_Id,
+        r.Total_Runs,
+        COALESCE(w.Total_Wickets, 0) AS Total_Wickets
+    FROM 
+        runs_by_team r
+    LEFT JOIN 
+        wickets_by_team w 
+        ON r.Season_Id = w.Season_Id AND r.Team_Id = w.Team_Id
+),
+team_comparison AS (
+    SELECT 
+        curr.Team_Id,
+        curr.Season_Id,
+        curr.Total_Runs,
+        curr.Total_Wickets,
+        prev.Total_Runs AS Prev_Runs,
+        prev.Total_Wickets AS Prev_Wickets,
+        
+        CASE
+            WHEN curr.Total_Runs > prev.Total_Runs AND curr.Total_Wickets > prev.Total_Wickets THEN 'Improved'
+            WHEN curr.Total_Runs < prev.Total_Runs AND curr.Total_Wickets < prev.Total_Wickets THEN 'Declined'
+            WHEN curr.Total_Runs = prev.Total_Runs AND curr.Total_Wickets = prev.Total_Wickets THEN 'Same'
+            ELSE 'Mixed'
+        END AS Performance_Status
+    FROM 
+        team_season_stats curr
+    JOIN 
+        team_season_stats prev 
+        ON curr.Team_Id = prev.Team_Id AND curr.Season_Id = prev.Season_Id + 1
+)
+SELECT 
+    Team_Id,
+    Season_Id,
+    Total_Runs,
+    Total_Wickets,
+    Prev_Runs,
+    Prev_Wickets,
+    Performance_Status
+FROM 
+    team_comparison
+ORDER BY 
+    Team_Id, Season_Id;
+    
+-- Answer of objective question No.12
+SELECT 
+    m.Season_Id,
+    b.Team_Batting as Team,
+    ROUND(SUM(b.Runs_Scored) / COUNT(DISTINCT b.Match_Id), 2) AS Avg_team_Runs
+FROM 
+    ball_by_ball b
+JOIN 
+    matches m ON b.Match_Id = m.Match_Id
+GROUP BY 
+    m.Season_Id, b.Team_Batting
+ORDER BY 
+    m.Season_Id, b.Team_Batting;
+-- cont.....Answer of objective question No.12
+SELECT 
+    m.Season_Id,
+    b.Team_Bowling as team,
+    ROUND(COUNT(w.Player_Out) / COUNT(DISTINCT b.Match_Id), 2) AS Avg_Wickets_Per_session
+FROM 
+    ball_by_ball b
+JOIN 
+    matches m ON b.Match_Id = m.Match_Id
+JOIN 
+    wicket_taken w ON b.Match_Id = w.Match_Id AND b.Innings_No = w.Innings_No AND b.Striker = w.Player_Out
+GROUP BY 
+    m.Season_Id, b.Team_Bowling
+ORDER BY 
+    m.Season_Id, b.Team_Bowling;
+    
+-- Answer of objective question No.13
+WITH Bowler_Wickets AS (
+    SELECT 
+        bb.Bowler,
+        m.Venue_Id,
+        COUNT(w.Player_Out) AS Wickets_Taken,
+        bb.Match_Id
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball bb 
+            ON w.Match_Id = bb.Match_Id 
+            AND w.Innings_No = bb.Innings_No 
+            AND w.Player_Out = bb.Striker
+    JOIN 
+        matches m 
+            ON m.Match_Id = bb.Match_Id
+    GROUP BY 
+        bb.Bowler, m.Venue_Id, bb.Match_Id
+),
+
+Avg_Wickets_Per_Venue AS (
+    SELECT 
+        bw.Bowler,
+        v.Venue_Name,
+        ROUND(AVG(bw.Wickets_Taken), 2) AS Avg_Wickets
+    FROM 
+        Bowler_Wickets bw
+    JOIN 
+        venue v 
+            ON bw.Venue_Id = v.Venue_Id
+    GROUP BY 
+        bw.Bowler, v.Venue_Name
+)
+
+SELECT 
+    *,
+    RANK() OVER (PARTITION BY Venue_Name ORDER BY Avg_Wickets DESC) AS Bowler_Rank
+FROM 
+    Avg_Wickets_Per_Venue
+ORDER BY 
+    Venue_Name, Bowler_Rank;
+    
+-- Answer of objective question No.14
+WITH batting AS (
+    SELECT 
+        m.Season_Id,
+        b.Striker AS Player_Id,
+        SUM(b.Runs_Scored) AS Total_Runs,
+        0 AS Total_Wickets
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        m.Season_Id, b.Striker
+),
+bowling AS (
+    SELECT 
+        m.Season_Id,
+        b.Bowler AS Player_Id,
+        0 AS Total_Runs,
+        COUNT(*) AS Total_Wickets
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball b ON 
+            w.Match_Id = b.Match_Id AND 
+            w.Innings_No = b.Innings_No AND 
+            w.Over_Id = b.Over_Id AND 
+            w.Ball_Id = b.Ball_Id
+    JOIN 
+        matches m ON w.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        m.Season_Id, b.Bowler
+),
+combined AS (
+    SELECT * FROM batting
+    UNION ALL
+    SELECT * FROM bowling
+),
+player_season_stats AS (
+    SELECT 
+        Season_Id,
+        Player_Id,
+        SUM(Total_Runs) AS Total_Runs,
+        SUM(Total_Wickets) AS Total_Wickets
+    FROM 
+        combined
+    GROUP BY 
+        Season_Id, Player_Id
+),
+consistent_players AS (
+    SELECT 
+        Player_Id,
+        COUNT(DISTINCT Season_Id) AS Seasons_Played,
+        SUM(Total_Runs) / 4 AS Avg_Runs,
+        SUM(Total_Wickets) / 4 AS Avg_Wickets
+    FROM 
+        player_season_stats
+    GROUP BY 
+        Player_Id
+    HAVING 
+        COUNT(DISTINCT Season_Id) <= 4  -- Played all 4 seasons
+)
+
+
+SELECT 
+    cp.Player_Id,
+    p.Player_Name,
+    ROUND(cp.Avg_Runs, 2) AS Avg_Runs,
+    ROUND(cp.Avg_Wickets, 2) AS Avg_Wickets,
+    CASE 
+        WHEN cp.Avg_Runs >= 250 OR cp.Avg_Wickets >= 10 THEN 'Consistent'
+        ELSE 'Inconsistent'
+    END AS Performance_Status
+FROM 
+    consistent_players cp
+JOIN 
+    player p ON cp.Player_Id = p.Player_Id
+ORDER BY 
+    Performance_Status;
+    
+-- Answer of objective question No.15
+WITH Player_Venue_Runs AS (
+    SELECT 
+        b.Striker AS Player_Id,
+        m.Venue_Id,
+        SUM(b.Runs_Scored) AS Total_Runs,
+        COUNT(DISTINCT b.Match_Id) AS Matches_Played
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    GROUP BY 
+        b.Striker, m.Venue_Id
+),
+
+Venue_Avg AS (
+    SELECT 
+        pvr.Player_Id,
+        v.Venue_Name,
+        ROUND(pvr.Total_Runs/ pvr.Matches_Played, 2) AS Avg_Runs_Per_Match
+    FROM 
+        Player_Venue_Runs pvr
+    JOIN 
+        venue v ON pvr.Venue_Id = v.Venue_Id
+)
+
+SELECT * FROM Venue_Avg
+ORDER BY Avg_Runs_Per_Match DESC;
+
+-- Answer of subjective question No.1
+SELECT v.Venue_Name,m.Venue_Id, count(m.Venue_Id) as no_of_matches_won
+FROM matches m 
+join venue v 
+on m.Venue_Id=v.Venue_Id
+where Toss_Winner=Match_Winner
+group by Venue_Id
+order by no_of_matches_won desc;
+
+-- cont...Answer of subjective question No.1
+SELECT round(count(*)/(select count(*) from matches)*100,2) as winning_percentage
+FROM matches
+where Toss_Winner=Match_Winner;
+
+-- Answer of subjective question No.2
+WITH selected_matches AS (
+    SELECT Match_Id
+    FROM matches
+    WHERE Season_Id between 6 and 9
+),
+batsman_runs AS (
+    SELECT
+        b.Striker AS Player_Id,
+        SUM(b.Runs_Scored) AS Total_Runs
+    FROM
+        ball_by_ball b
+    JOIN
+        selected_matches sm ON b.Match_Id = sm.Match_Id
+    GROUP BY
+        b.Striker
+),
+bowler_wickets AS (
+    SELECT
+        bb.Bowler AS Player_Id,
+        COUNT(*) AS Total_Wickets
+    FROM
+        wicket_taken w
+    JOIN
+        ball_by_ball bb ON
+            w.Match_Id = bb.Match_Id AND
+            w.Over_Id = bb.Over_Id AND
+            w.Ball_Id = bb.Ball_Id
+    JOIN
+        selected_matches sm ON w.Match_Id = sm.Match_Id
+    GROUP BY
+        bb.Bowler
+),
+final_output AS (
+    SELECT
+        'Top Order' AS Role,
+        p.Player_Name,
+        br.Total_Runs,
+        NULL AS Total_Wickets
+    FROM batsman_runs br
+    JOIN player p ON br.Player_Id = p.Player_Id
+    WHERE p.Player_Name IN ('V Kohli', 'DA Warner', 'KL Rahul')
+
+    UNION ALL
+    SELECT
+        'Middle Order',
+        p.Player_Name,
+        br.Total_Runs,
+        NULL
+    FROM batsman_runs br
+    JOIN player p ON br.Player_Id = p.Player_Id
+    WHERE p.Player_Name IN ('AB de Villiers', 'MS Dhoni', 'Andre Russell')
+
+    UNION ALL
+    SELECT
+        'All-Rounder',
+        p.Player_Name,
+        COALESCE(br.Total_Runs, 0),
+        COALESCE(bw.Total_Wickets, 0)
+    FROM player p
+    LEFT JOIN batsman_runs br ON p.Player_Id = br.Player_Id
+    LEFT JOIN bowler_wickets bw ON p.Player_Id = bw.Player_Id
+    WHERE p.Player_Name IN ('SR Watson', 'DJ Bravo')
+    UNION ALL
+    SELECT
+        'Bowler',
+        p.Player_Name,
+        NULL,
+        bw.Total_Wickets
+    FROM bowler_wickets bw
+    JOIN player p ON bw.Player_Id = p.Player_Id
+    WHERE p.Player_Name IN ('B Kumar', 'Mustafizur Rahman', 'YS Chahal')
+)
+SELECT *
+FROM final_output
+ORDER BY Total_Runs desc, Player_Name;
+
+-- Answer of subjective question No.4
+WITH batting_stats AS (
+    SELECT 
+        b.Striker AS Player_Id,
+        SUM(b.Runs_Scored) AS Total_Runs
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        b.Striker
+),
+bowling_stats AS (
+    SELECT 
+        b.Bowler AS Player_Id,
+        COUNT(*) AS Total_Wickets
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball b ON 
+            w.Match_Id = b.Match_Id AND 
+            w.Innings_No = b.Innings_No AND 
+            w.Over_Id = b.Over_Id AND 
+            w.Ball_Id = b.Ball_Id
+    JOIN 
+        matches m ON w.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        b.Bowler
+)
+SELECT 
+    p.Player_Id,
+    p.Player_Name,
+    b.Total_Runs,
+    bw.Total_Wickets,
+    CASE 
+        WHEN b.Total_Runs >= 300 AND bw.Total_Wickets >= 10 THEN 'All-Rounder'
+        ELSE 'Partially Skilled'
+    END AS Player_Type
+FROM 
+    batting_stats b
+JOIN 
+    bowling_stats bw ON b.Player_Id = bw.Player_Id
+JOIN 
+    player p ON p.Player_Id = b.Player_Id
+WHERE 
+    b.Total_Runs >= 300 AND bw.Total_Wickets >= 12
+ORDER BY 
+    b.Total_Runs DESC, bw.Total_Wickets DESC;
+    
+-- Answer of subjective question No.5
+WITH batting_stats AS (
+    SELECT 
+        b.Striker AS Player_Id,
+        SUM(b.Runs_Scored) AS Total_Runs
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        b.Striker
+),
+bowling_stats AS (
+    SELECT 
+        b.Bowler AS Player_Id,
+        COUNT(*) AS Total_Wickets
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball b ON 
+            w.Match_Id = b.Match_Id AND 
+            w.Innings_No = b.Innings_No AND 
+            w.Over_Id = b.Over_Id AND 
+            w.Ball_Id = b.Ball_Id
+    JOIN 
+        matches m ON w.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        b.Bowler
+), versatile_players as (
+SELECT 
+    p.Player_Id,
+    p.Player_Name,
+    b.Total_Runs,
+    bw.Total_Wickets,
+    CASE 
+        WHEN b.Total_Runs >= 300 AND bw.Total_Wickets >= 10 THEN 'All-Rounder'
+        ELSE 'Partially Skilled'
+    END AS Player_Type
+FROM 
+    batting_stats b
+JOIN 
+    bowling_stats bw ON b.Player_Id = bw.Player_Id
+JOIN 
+    player p ON p.Player_Id = b.Player_Id
+WHERE 
+    b.Total_Runs >= 300 AND bw.Total_Wickets >= 12
+ORDER BY 
+    b.Total_Runs DESC, bw.Total_Wickets DESC
+),
+batting_performance AS (
+    SELECT 
+        b.Match_Id,
+        b.Striker AS Player_Id,
+        SUM(b.Runs_Scored) AS Runs,
+        MIN(b.Team_Batting) AS Team_Id
+    FROM 
+        ball_by_ball b
+    JOIN matches m ON b.Match_Id = m.Match_Id
+    WHERE m.Season_Id BETWEEN 6 AND 9
+    GROUP BY b.Match_Id, b.Striker
+    HAVING SUM(b.Runs_Scored) >= 30  -- define "good" batting performance
+),
+
+bowling_performance AS (
+    SELECT 
+        b.Match_Id,
+        b.Bowler AS Player_Id,
+        COUNT(*) AS Wickets,
+        MIN(b.Team_Bowling) AS Team_Id
+    FROM 
+        wicket_taken w
+    JOIN ball_by_ball b 
+        ON w.Match_Id = b.Match_Id AND 
+           w.Innings_No = b.Innings_No AND 
+           w.Over_Id = b.Over_Id AND 
+           w.Ball_Id = b.Ball_Id
+    JOIN matches m ON b.Match_Id = m.Match_Id
+    WHERE m.Season_Id BETWEEN 6 AND 9
+    GROUP BY b.Match_Id, b.Bowler
+    HAVING COUNT(*) >= 2 
+),
+combined_performance AS (
+    SELECT * FROM batting_performance
+    UNION ALL
+    SELECT * FROM bowling_performance
+),
+
+player_impact AS (
+    SELECT 
+        cp.Player_Id,
+        COUNT(*) AS Total_Performances,
+        SUM(CASE WHEN m.Match_Winner = cp.Team_Id THEN 1 ELSE 0 END) AS Wins_When_Performed
+    FROM 
+        combined_performance cp
+    JOIN 
+        matches m ON cp.Match_Id = m.Match_Id
+    GROUP BY 
+        cp.Player_Id
+)
+SELECT 
+    pi.Player_Id,
+    p.Player_Name,
+    pi.Total_Performances,
+    pi.Wins_When_Performed,
+    ROUND((pi.Wins_When_Performed / pi.Total_Performances) * 100, 2) AS Win_Impact_Percentage
+FROM 
+    player_impact pi
+JOIN 
+    player p ON pi.Player_Id = p.Player_Id
+inner join versatile_players v on v.Player_Id=pi.Player_Id
+WHERE 
+    pi.Total_Performances >= 5  -- filter out players with low sample size
+ORDER BY 
+    Win_Impact_Percentage DESC, pi.Total_Performances DESC;
+    
+    -- Answer of subjective question No.7
+WITH match_runs AS (
+    SELECT
+        m.Match_Id,
+        m.Season_Id,
+        m.Venue_Id,
+        m.Toss_Decide,
+        SUM(b.Runs_Scored + COALESCE(e.Extra_Runs, 0)) AS Total_Runs
+    FROM
+        matches m
+    JOIN
+        ball_by_ball b ON m.Match_Id = b.Match_Id
+    LEFT JOIN
+        extra_runs e ON m.Match_Id = e.Match_Id AND 
+                        b.Innings_No = e.Innings_No AND 
+                        b.Over_Id = e.Over_Id AND 
+                        b.Ball_Id = e.Ball_Id
+    WHERE
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY
+        m.Match_Id, m.Season_Id, m.Venue_Id, m.Toss_Decide
+),
+
+venue_avg AS (
+    SELECT
+        v.Venue_Name,
+        ROUND(AVG(mr.Total_Runs), 2) AS Avg_Total_Runs,
+        COUNT(*) AS Matches_Played
+    FROM
+        match_runs mr
+    JOIN
+        venue v ON mr.Venue_Id = v.Venue_Id
+    GROUP BY
+        v.Venue_Name
+),
+
+toss_impact AS (
+    SELECT
+        t.Toss_Name,
+        ROUND(AVG(mr.Total_Runs), 2) AS Avg_Total_Runs_After_Toss
+    FROM
+        match_runs mr
+    JOIN
+        toss_decision t ON mr.Toss_Decide = t.Toss_Id
+    GROUP BY
+        t.Toss_Name
+),
+
+season_trends AS (
+    SELECT
+        mr.Season_Id,
+        ROUND(AVG(mr.Total_Runs), 2) AS Avg_Total_Runs
+    FROM
+        match_runs mr
+    GROUP BY
+        mr.Season_Id
+)
+
+-- Final combined output
+SELECT
+    'Venue Avg Scores' AS Metric,
+    Venue_Name AS Venue,
+    Avg_Total_Runs,
+    Matches_Played
+FROM venue_avg
+
+UNION ALL
+
+SELECT
+    'Toss Decision Impact',
+    Toss_Name,
+    Avg_Total_Runs_After_Toss,
+    null
+FROM toss_impact
+
+UNION ALL
+
+SELECT
+    'Season Trends',
+    CONCAT('Season ', Season_Id),
+    Avg_Total_Runs,
+    null 
+FROM season_trends
+
+ORDER BY Metric, Avg_Total_Runs DESC;
+    
+-- Answer of subjective question No.8
+WITH Match_Winners AS (
+    SELECT 
+        Match_Id,
+        Venue_Id,
+        Team_1,
+        Team_2,
+        CASE 
+            WHEN Win_Type = 1 THEN Team_1
+            WHEN Win_Type = 2 THEN Team_2
+            ELSE NULL
+        END AS Winner_Team_Id
+    FROM 
+        matches
+    WHERE 
+        Win_Type IN (1, 2)
+),
+Home_Matches AS (
+    SELECT 
+        m.Match_Id,
+        t.Team_Id
+    FROM 
+        matches m
+    JOIN 
+        home_ground t 
+        ON (t.Team_Id = m.Team_1 OR t.Team_Id = m.Team_2)
+        AND t.Venue_Id = m.Venue_Id
+),
+Home_Wins AS (
+    SELECT 
+        hw.Winner_Team_Id AS Team_Id,
+        COUNT(*) AS Wins_At_Home
+    FROM 
+        Match_Winners hw
+    JOIN 
+        home_ground hg 
+        ON hw.Winner_Team_Id = hg.Team_Id 
+        AND hw.Venue_Id = hg.Venue_Id
+    GROUP BY 
+        hw.Winner_Team_Id
+)
+
+SELECT 
+    hm.Team_Id,
+    COUNT(hm.Match_Id) AS Home_Matches_Played,
+    COALESCE(hw.Wins_At_Home, 0) AS Home_Matches_Won
+FROM 
+    Home_Matches hm
+LEFT JOIN 
+    Home_Wins hw ON hm.Team_Id = hw.Team_Id
+GROUP BY 
+    hm.Team_Id, hw.Wins_At_Home
+ORDER BY 
+    Home_Matches_Won DESC;
+    
+-- Answer of subjective question No.9
+WITH rcb_matches AS (
+    SELECT 
+        m.Match_Id,
+        m.Season_Id,
+        CASE 
+            WHEN m.Team_1 = 2 THEN m.Team_2
+            ELSE m.Team_1
+        END AS Opponent_Team_Id,
+        m.Match_Winner,
+        m.Man_of_the_Match,
+        m.Venue_Id,
+        CASE 
+            WHEN m.Match_Winner = 2 THEN 'Win'
+            ELSE 'Loss'
+        END AS Result
+    FROM 
+        matches m
+    WHERE 
+        m.Team_1 = 2 OR m.Team_2 = 2
+),
+rcb_runs AS (
+    SELECT 
+        Match_Id,
+        SUM(Runs_Scored) AS Runs_Scored
+    FROM 
+        ball_by_ball
+    WHERE 
+        Team_Batting = 2
+    GROUP BY 
+        Match_Id
+),
+rcb_wickets AS (
+    SELECT 
+        b.Match_Id,
+        COUNT(*) AS Wickets
+    FROM 
+        ball_by_ball b
+    JOIN 
+        wicket_taken w ON b.Match_Id = w.Match_Id AND b.Innings_No = w.Innings_No 
+                  AND b.Over_Id = w.Over_Id AND b.Ball_Id = w.Ball_Id
+    WHERE 
+        b.Team_Bowling = 2
+    GROUP BY 
+        b.Match_Id
+),
+rcb_potm AS (
+    SELECT 
+        m.Match_Id,
+        m.Season_Id,
+        m.Man_of_the_Match
+    FROM 
+        matches m
+    JOIN 
+        player_match pm ON m.Match_Id = pm.Match_Id
+    WHERE 
+        pm.Team_Id = 2  -- RCB
+        AND pm.Player_Id = m.Man_of_the_Match
+)
+SELECT 
+    r.Season_Id,
+    COUNT(r.Match_Id) AS Matches_Played,
+    SUM(CASE WHEN r.Result = 'Win' THEN 1 ELSE 0 END) AS Matches_Won,
+    COUNT(r.Match_Id) - SUM(CASE WHEN r.Result = 'Win' THEN 1 ELSE 0 END) AS Matches_Lost,
+    ROUND(AVG(rr.Runs_Scored), 2) AS Avg_Runs_Scored,
+    ROUND(AVG(rw.Wickets), 2) AS Avg_Wickets_Taken,
+    COUNT(DISTINCT rp.Match_Id) AS RCB_POTM_Count,
+    ROUND((SUM(CASE WHEN r.Result = 'Win' THEN 1 ELSE 0 END) * 1.0 / COUNT(r.Match_Id)) * 100, 2) AS Win_Percentage
+FROM 
+    rcb_matches r
+LEFT JOIN 
+    rcb_runs rr ON r.Match_Id = rr.Match_Id
+LEFT JOIN 
+    rcb_wickets rw ON r.Match_Id = rw.Match_Id
+LEFT JOIN 
+    rcb_potm rp ON r.Match_Id = rp.Match_Id
+GROUP BY 
+    r.Season_Id
+ORDER BY 
+    r.Season_Id;
+    
+-- top 5 batsmen for ppt
+
+WITH filtered_data AS (
+    SELECT 
+        b.Match_Id,
+        m.Season_Id,
+        b.Striker AS Player_Id,
+        b.Runs_Scored
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+),player_stats AS (
+    SELECT 
+        Player_Id,
+        COUNT(*) AS Balls_Faced,
+        SUM(Runs_Scored) AS Total_Runs,
+        COUNT(DISTINCT Match_Id) AS Innings_Played
+    FROM 
+        filtered_data
+    GROUP BY 
+        Player_Id
+),final_batsmen_stats AS (
+    SELECT 
+        ps.Player_Id,
+        p.Player_Name,
+        ps.Total_Runs,
+        ROUND(ps.Total_Runs  / ps.Innings_Played, 2) AS Avg_Runs,
+        ROUND((ps.Total_Runs / ps.Balls_Faced) * 100, 2) AS Strike_Rate
+    FROM 
+        player_stats ps
+    JOIN 
+        player p ON ps.Player_Id = p.Player_Id
+    WHERE 
+        ps.Innings_Played >= 5 -- to ensure fair average
+)
+SELECT 
+    Player_Name,
+    Total_Runs,
+    Avg_Runs,
+    Strike_Rate
+FROM 
+    final_batsmen_stats
+ORDER BY 
+    Total_Runs DESC
+LIMIT 5;
+
+-- top 5 bowler for ppt 
+
+WITH filtered_balls AS (
+    SELECT 
+        b.Match_Id,
+        m.Season_Id,
+        b.Bowler,
+        b.Runs_Scored  AS Runs_Conceded
+    FROM 
+        ball_by_ball b
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+),bowler_activity AS (
+    SELECT 
+        Bowler AS Player_Id,
+        COUNT(*) AS Balls_Bowled,
+        SUM(Runs_Conceded) AS Runs_Conceded,
+        COUNT(DISTINCT Match_Id) AS Matches_Played
+    FROM 
+        filtered_balls
+    GROUP BY 
+        Bowler
+),bowler_wickets AS (
+    SELECT 
+        b.Bowler AS Player_Id,
+        COUNT(*) AS Total_Wickets
+    FROM 
+        wicket_taken w
+    JOIN 
+        ball_by_ball b ON 
+            w.Match_Id = b.Match_Id AND 
+            w.Innings_No = b.Innings_No AND 
+            w.Over_Id = b.Over_Id AND 
+            w.Ball_Id = b.Ball_Id
+    JOIN 
+        matches m ON b.Match_Id = m.Match_Id
+    WHERE 
+        m.Season_Id BETWEEN 6 AND 9
+    GROUP BY 
+        b.Bowler
+),bowler_stats AS (
+    SELECT 
+        a.Player_Id,
+        p.Player_Name,
+        w.Total_Wickets,
+        a.Matches_Played,
+        ROUND(w.Total_Wickets / a.Matches_Played, 2) AS Avg_Wickets_Per_Match,
+        ROUND(a.Runs_Conceded / (a.Balls_Bowled/6), 2) AS Economy
+    FROM 
+        bowler_activity a
+    JOIN 
+        bowler_wickets w ON a.Player_Id = w.Player_Id
+    JOIN 
+        player p ON a.Player_Id = p.Player_Id
+    WHERE 
+        a.Matches_Played >= 5  -- filter to avoid small sample sizes
+)
+SELECT 
+    Player_Name,
+    Total_Wickets,
+    Avg_Wickets_Per_Match,
+    Economy
+FROM 
+    bowler_stats
+ORDER BY 
+    Total_Wickets DESC
+LIMIT 5;
